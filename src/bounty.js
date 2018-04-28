@@ -140,7 +140,8 @@ export default ({
                   animationDelay = 100,
                   letterAnimationDelay = 100,
                   chars = false,
-                  rotations = ROTATIONS
+                  rotations = ROTATIONS,
+                  duration = 3000
                 }) => {
   const element = select(el);
   const computedStyle = window.getComputedStyle(element);
@@ -237,13 +238,14 @@ export default ({
     const digitTransition = transition({
       from: sourceDistance,
       to: targetDistance,
+      duration: duration,
       delay: (digits.length - 1 - i) * letterAnimationDelay + animationDelay,
       step (value) {
         digit.offset.y = offset + value % (fontSize * lineHeight * digitsCount);
         digit.node::attr('transform', `translate(${digit.offset.x}, ${digit.offset.y})`);
         const filterOrigin = (sourceDistance + targetDistance) / 2;
         const motionValue =
-          (Math.abs(Math.abs(value - filterOrigin) - filterOrigin) - sourceDistance) / 100;
+          (Math.abs(Math.abs(value - filterOrigin) - filterOrigin) - sourceDistance);
         digit.filter::attr('stdDeviation', `0 ${motionValue}`);
       },
       end: i === 0 ? () => cancelAnimation() : e => e
