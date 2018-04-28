@@ -1,18 +1,54 @@
 import loop from './loop';
-import { select, append, attr, style, text } from './selection';
+import {select, append, attr, style, text} from './selection';
 import transition from './transition';
 
-const DIGITS_COUNT = 10;
 const ROTATIONS = 3;
+const DIGITS = '01234567890'.split('');
+const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?!0'.split('');
+
+const charSetVal = (char, charSet) => {
+  return charSet.indexOf(char);
+};
+
+const digitVal = (char) => {
+  return charSetVal(char, DIGITS);
+};
+
+const searchInCharSet = (s, charSet) => {
+  if (s && s.length) {
+    for (let idx = 0; idx < s.length; idx++) {
+      let c = s[idx];
+      if (charSet.indexOf(c) >= 0) {
+        return idx;
+      }
+    }
+  }
+  return -1;
+};
 
 const createDigitRoulette = (svg, fontSize, lineHeight, id) => {
-  const digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
   const roulette = svg
     ::append('g')
     ::attr('id', `digit-${id}`)
     ::style('filter', `url(#motionFilter-${id})`);
 
-  digits.forEach((el, i) => {
+  DIGITS.forEach((el, i) => {
+    roulette
+      ::append('text')
+      ::attr('y', -i * fontSize * lineHeight)
+      ::text(el);
+  });
+
+  return roulette;
+};
+
+const createCharacterRoulette = (svg, fontSize, lineHeight, id) => {
+  const roulette = svg
+    ::append('g')
+    ::attr('id', `digit-${id}`)
+    ::style('filter', `url(#motionFilter-${id})`);
+
+  CHARS.forEach((el, i) => {
     roulette
       ::append('text')
       ::attr('y', -i * fontSize * lineHeight)
@@ -96,14 +132,16 @@ const setViewBox = (svg, width, height) => {
 };
 
 export default ({
-  el,
-  value,
-  initialValue = null,
-  lineHeight = 1.35,
-  letterSpacing = 1,
-  animationDelay = 100,
-  letterAnimationDelay = 100
-}) => {
+                  el,
+                  value,
+                  initialValue = null,
+                  lineHeight = 1.35,
+                  letterSpacing = 1,
+                  animationDelay = 100,
+                  letterAnimationDelay = 100,
+                  chars = false,
+                  rotations = ROTATIONS
+                }) => {
   const element = select(el);
   const computedStyle = window.getComputedStyle(element);
   const fontSize = parseInt(computedStyle.fontSize, 10);
@@ -121,16 +159,26 @@ export default ({
   createGradient(defs, salt);
   createMask(defs, salt);
   createShadowFailFilter(defs);
+  let charSet;
+  if (chars === true) {
+    charSet = CHARS;
+  } else if (typeof chars === 'string') {
+    charSet = chars.split('');
+  } else {
+    charSet = DIGITS;
+  }
+  const digitsCount = charSet.length - 1;
 
   const prepareValues = (value, secondValue) => {
     const values = String(value)
       .replace(/ /g, '\u00a0')
       .split('');
 
-    const digitIndex = String(value).search(/\d/);
+    //const digitIndex = String(value).search(match);
+    const digitIndex = searchInCharSet(String(value), charSet);
     while (secondValue.length > values.length) {
       const char = secondValue[secondValue.length - values.length - 1 + digitIndex];
-      values.splice(digitIndex, 0, isNaN(parseInt(char, 10)) ? char : '0');
+      values.splice(digitIndex, 0, (charSetVal(char, charSet) < 0) ? char : '0');
     }
     return values;
   };
@@ -139,17 +187,11 @@ export default ({
   const values = prepareValues(String(value), initialString);
   const initial = prepareValues(initialString, String(value));
 
-  const chars = values.map((char, i) => {
+  const charMap = values.map((char, i) => {
     const id = `${i}-${salt}`;
-    if (isNaN(parseInt(char, 10)) || isNaN(parseInt(initial[i], 10))) {
+    if (!chars && digitVal(char) >= 0) {
       return {
-        isDigit: false,
-        node: createCharacter(svg, char, fontSize),
-        value: char,
-        offset: { x: 0, y: offset }
-      };
-    } else {
-      return {
+        isRoulette: true,
         isDigit: true,
         id: id,
         node: createDigitRoulette(svg, fontSize, lineHeight, id),
@@ -161,20 +203,43 @@ export default ({
           y: offset + Number(initial[i]) * (fontSize * lineHeight)
         }
       };
+    } else if (charSetVal(char, charSet) >= 0) {
+      return {
+        isRoulette: true,
+        isDigit: false,
+        node: createCharacterRoulette(svg, fontSize, lineHeight, id),
+        filter: createFilter(defs, id),
+        value: charSetVal(char, charSet),
+        initial: charSetVal(initial[i], charSet),
+        offset: {
+          x: 0,
+          y: offset + charSetVal(initial[i], charSet) * (fontSize * lineHeight)
+        }
+      };
+    } else {
+      return {
+        isRoulette: false,
+        isDigit: false,
+        node: createCharacter(svg, char, fontSize),
+        filter: createFilter(defs, id),
+        value: char,
+        initial: initial[i],
+        offset: { x: 0, y: offset }
+      };
     }
   });
 
   const transitions = [];
-  const digits = chars.filter(char => char.isDigit);
+  const digits = charMap.filter(char => char.isRoulette);
   digits.forEach((digit, i) => {
     const sourceDistance = digit.initial * (fontSize * lineHeight);
-    const targetDistance = (ROTATIONS * DIGITS_COUNT + digit.value) * (fontSize * lineHeight);
+    const targetDistance = (rotations * digitsCount + digit.value) * (fontSize * lineHeight);
     const digitTransition = transition({
       from: sourceDistance,
       to: targetDistance,
       delay: (digits.length - 1 - i) * letterAnimationDelay + animationDelay,
-      step(value) {
-        digit.offset.y = offset + value % (fontSize * lineHeight * DIGITS_COUNT);
+      step (value) {
+        digit.offset.y = offset + value % (fontSize * lineHeight * digitsCount);
         digit.node::attr('transform', `translate(${digit.offset.x}, ${digit.offset.y})`);
         const filterOrigin = (sourceDistance + targetDistance) / 2;
         const motionValue =
@@ -188,7 +253,7 @@ export default ({
 
   const update = timestamp => {
     canvasWidth = 0;
-    chars.forEach(char => {
+    charMap.forEach(char => {
       const { width } = char.node.getBBox();
 
       char.offset.x = canvasWidth;
@@ -205,7 +270,7 @@ export default ({
     });
     canvasWidth -= letterSpacing;
 
-    chars.forEach(char => {
+    charMap.forEach(char => {
       char.node::attr('transform', `translate(${char.offset.x}, ${char.offset.y})`);
     });
 
